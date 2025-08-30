@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>포트폴리오·배당 트래커 v1.2</title>
+  <style>
+    :root{ --bg:#0b1020; --panel:#111834; --muted:#7a88b8; --text:#eaf0ff; --accent:#7aa2ff; --border:#1f2a4c; --chip:#1a2244; --danger:#ff6b6b;}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Roboto;padding:0;background:var(--bg);color:var(--text)}
+    header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0b1020,#0b1020cc 70%,#0b102000)}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+    .tab{padding:10px 14px;border-radius:999px;background:var(--chip);border:1px solid var(--border);cursor:pointer}
+    .tab.active{background:#1d2a56;color:#fff;border-color:#3557a4}
+    section{display:none} section.active{display:block}
+    .grid{display:grid;gap:10px}.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:14px}
+    label{font-size:12px;color:#b7c6ff;display:block;margin-bottom:6px} input,select{width:100%;background:#0d1430;color:#eaf0ff;border:1px solid var(--border);border-radius:10px;padding:10px}
+    button{background:#2a63ff;color:#fff;border:none;border-radius:12px;padding:10px 14px;cursor:pointer} button.secondary{background:#1f2a4c} button.danger{background:#c73838}
+    table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:10px 8px;border-bottom:1px dashed var(--border)} th{position:sticky;top:0;background:#0f1734;text-align:left}
+    .right{text-align:right}.mono{font-variant-numeric:tabular-nums}.muted{color:var(--muted)} .hint{font-size:12px;color:#a8b3da}
+    .chip{display:inline-block;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--chip);} .row{display:flex;gap:12px;align-items:center}
+    .spinner{width:14px;height:14px;border:2px solid #3557a4;border-right-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:-2px}@keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h2>포트폴리오·배당 트래커 v1.2</h2>
+    <div class="hint">업데이트: 평단 가중평균 보정(총액/단가 선택), 매수량 정수표시, 합계 노출/연도 선택 고정, 목표 주당배당 = 최근 1회</div>
+    <nav class="tabs" id="tabs"></nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="tab-input" class="active">
+    <div class="grid g2">
+      <div class="card">
+        <h3>① 수기 입력</h3>
+        <div class="grid g2">
+          <div><label>종목</label><input id="in-symbol" placeholder="AAPL"/></div>
+          <div><label>매수금(USD)</label><input id="in-amount" type="number" step="0.0001"/></div>
+          <div><label>매수량(주)</label><input id="in-qty" type="number" step="0.0001"/></div>
+          <div><label>날짜</label><input id="in-date" type="date"/></div>
+        </div>
+        <div style="margin-top:8px"><button id="btn-save">저장</button> <span class="hint">* 매수금이 <b id="lbl-amount-kind">총액</b>인지, <b>설정</b> 탭에서 선택하세요.</span></div>
+      </div>
+      <div class="card">
+        <h3>② 파일 업로드</h3>
+        <div class="grid g2">
+          <div><label>CSV/XLSX 업로드</label><input id="file-input" type="file" accept=".csv,.xlsx"/></div>
+          <div><label>시트(엑셀)</label><select id="sheet-select"><option value="">- 자동 -</option></select></div>
+        </div>
+        <div style="margin-top:8px">
+          <button id="btn-register">등록하기</button>
+          <button id="btn-sample-xlsx" class="secondary">엑셀 샘플</button>
+          <button id="btn-sample-csv" class="secondary">CSV 샘플</button>
+        </div>
+        <div class="hint" style="margin-top:6px">컬럼: symbol, amount_usd, qty, date(YYYY-MM-DD) · 매수금은 <b>설정</b>의 타입(총액/단가)을 따릅니다.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-holdings">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div id="holdings-summary" class="hint"></div>
+      <div id="fx-chip" class="chip">USD→KRW 로딩 <span class="spinner"></span></div>
+    </div>
+    <div class="card">
+      <table id="tbl-holdings">
+        <thead>
+          <tr>
+            <th data-sort="symbol">종목</th>
+            <th class="right" data-sort="avg">평균매입가</th>
+            <th class="right" data-sort="price">현재가</th>
+            <th class="right" data-sort="qty">매수량</th>
+            <th class="right" data-sort="cost">총매수금액</th>
+            <th class="right" data-sort="pnl">손익</th>
+            <th class="right" data-sort="ret">수익률</th>
+            <th>삭제</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-latest-dividends">
+    <div class="card">
+      <table id="tbl-latest">
+        <thead>
+          <tr>
+            <th data-sort="date">날짜</th>
+            <th data-sort="symbol">종목</th>
+            <th class="right" data-sort="ps">주당 배당금</th>
+            <th class="right" data-sort="total">총 배당금</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-monthly">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><select id="sel-year"></select> <button id="btn-refresh-monthly" class="secondary">새로고침</button></div>
+      <div id="monthly-summary" class="hint"></div>
+    </div>
+    <div class="card">
+      <table id="tbl-monthly">
+        <thead><tr><th data-sort="month">월별</th><th class="right" data-sort="amt">총배당금</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-by-symbol">
+    <div class="row" style="justify-content:space-between;margin-bottom:10px">
+      <div><select id="sel-year2"></select> <button id="btn-refresh-by-symbol" class="secondary">새로고침</button></div>
+      <div id="by-symbol-summary" class="hint"></div>
+    </div>
+    <div class="card">
+      <table id="tbl-by-symbol">
+        <thead><tr><th data-sort="month">월</th><th data-sort="symbol">종목</th><th class="right" data-sort="amt">총배당금</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-goal">
+    <div class="grid g2">
+      <div class="card">
+        <h3>1) 목표 등록</h3>
+        <div class="grid g3">
+          <div><label>종목</label><input id="goal-symbol" placeholder="AAPL"/></div>
+          <div><label>수량</label><input id="goal-qty" type="number" step="0.0001"/></div>
+          <div style="display:flex;align-items:flex-end"><button id="btn-goal-add">등록</button></div>
+        </div>
+        <div class="hint" style="margin-top:6px">표에서 수량 직접 수정 가능 · 주당 배당금 = <b>최근 1회</b></div>
+      </div>
+      <div class="card">
+        <h3>2) 목표 리스트</h3>
+        <table id="tbl-goal">
+          <thead><tr><th>종목</th><th class="right">현재가</th><th class="right">수량</th><th class="right">주당 배당금(최근)</th><th class="right">총 배당금</th><th>삭제</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-report">
+    <div class="card" id="report-card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px">
+        <div class="hint">심층 리포트: 연/월 배당 인컴, 목표 대비 격차, 비중·수익률·배당수익률, 운용 코멘트</div>
+        <button id="btn-refresh-report" class="secondary">다시 생성</button>
+      </div>
+      <div id="report-content"></div>
+    </div>
+  </section>
+
+  <section id="tab-settings">
+    <div class="card">
+      <h3>설정</h3>
+      <div class="row" style="gap:20px;flex-wrap:wrap">
+        <div>
+          <label>매수금 타입</label>
+          <label><input type="radio" name="amountType" value="total" checked> 총액(USD, 기본)</label>
+          <label style="margin-left:10px"><input type="radio" name="amountType" value="unit"> 주당 단가(USD)</label><br/>
+          <span class="hint">CSV/엑셀/수기입력의 'amount_usd'가 무엇을 의미하는지 선택합니다.</span>
+        </div>
+        <div>
+          <label>목표 주당 배당금 기준</label>
+          <label><input type="radio" name="goalDivBasis" value="latest" checked> 최근 1회</label>
+          <label style="margin-left:10px"><input type="radio" name="goalDivBasis" value="ttm"> TTM/최근 12개월 합계</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const $ = s=>document.querySelector(s), $$ = s=>Array.from(document.querySelectorAll(s));
+const fmtUSD = n => (n==null||!isFinite(n)? "-" : (n>=0? "$":"-$")+Math.abs(n).toFixed(2));
+const fmtKRW = n => (n==null||!isFinite(n)? "-" : (n>=0? "":"-")+Math.round(Math.abs(n)).toLocaleString("ko-KR"));
+const fmtBoth = (usd, fx) => `${fmtUSD(usd)} <span class="muted">(₩${fmtKRW(usd*fx)})</span>`;
+const fmtQty0 = q => (q==null||!isFinite(q)? "-" : Math.round(q).toLocaleString("ko-KR"));
+const pct = x => (x==null||!isFinite(x)? "-" : (x>=0? "+":"")+ (x*100).toFixed(2) + "%");
+const todayISO = ()=> new Date().toISOString().slice(0,10);
+
+const store={ get(k,d){ try{return JSON.parse(localStorage.getItem(k)??JSON.stringify(d));}catch{return d;} }, set(k,v){localStorage.setItem(k,JSON.stringify(v));} };
+let holdingsRaw = store.get("pf_holdings_v12", []);
+let goals = store.get("pf_goals_v12", []);
+let settings = store.get("pf_settings_v12", { amountType:"total", goalDivBasis:"latest" });
+
+function applySettingsUI(){
+  $$('input[name="amountType"]').forEach(r=> r.checked = (r.value===settings.amountType));
+  $$('input[name="goalDivBasis"]').forEach(r=> r.checked = (r.value===settings.goalDivBasis));
+  $("#lbl-amount-kind").textContent = settings.amountType==="total" ? "총액" : "단가";
+}
+$$('input[name="amountType"]').forEach(r=> r.onchange=()=>{ settings.amountType=r.value; store.set("pf_settings_v12",settings); applySettingsUI(); renderHoldings(); renderMonthly(); renderBySymbol(); renderReport(); });
+$$('input[name="goalDivBasis"]').forEach(r=> r.onchange=()=>{ settings.goalDivBasis=r.value; store.set("pf_settings_v12",settings); renderGoals(); renderReport(); });
+
+const fnBase = "/.netlify/functions";
+const endpoints = { quote: s=>`${fnBase}/quote?symbol=${encodeURIComponent(s)}`, dividends: s=>`${fnBase}/dividends?symbols=${encodeURIComponent(s)}`, fx: ()=>`${fnBase}/fx` };
+const cache = { price:{}, dividends:{}, fx:null };
+
+async function getFX(){ if(cache.fx) return cache.fx; $("#fx-chip").innerHTML='USD→KRW 로딩 <span class="spinner"></span>'; const r = await fetch(endpoints.fx()); const j=await r.json(); cache.fx=j?.rate||1300; $("#fx-chip").textContent=`USD→KRW ${Math.round(cache.fx).toLocaleString()} (Frankfurter)`; return cache.fx; }
+async function getPrice(sym){ if(cache.price[sym]) return cache.price[sym]; const r=await fetch(endpoints.quote(sym)); const j=await r.json(); const price=j?.price??null; cache.price[sym]=price; return price; }
+async function getDividends(symbols){ const need=symbols.filter(s=>!cache.dividends[s]); if(need.length){ const r=await fetch(endpoints.dividends(need.join(","))); const j=await r.json(); for(const s of need) cache.dividends[s]=j?.[s]||{latest:null,history:[]}; } return symbols.reduce((m,s)=>(m[s]=cache.dividends[s],m),{}); }
+
+const tabDefs=[["입력","tab-input"],["보유종목현황","tab-holdings"],["최신 배당현황","tab-latest-dividends"],["월별 배당현황","tab-monthly"],["종목별 누적 배당현황","tab-by-symbol"],["목표 계획","tab-goal"],["분석 리포트","tab-report"],["설정","tab-settings"]];
+function initTabs(){ const nav=$("#tabs"); nav.innerHTML=""; tabDefs.forEach(([label,id],i)=>{ const b=document.createElement("button"); b.className="tab"+(i===0?" active":""); b.textContent=label; b.onclick=()=>{ $$(".tab").forEach(t=>t.classList.remove("active")); b.classList.add("active"); $$("main section").forEach(s=>s.classList.remove("active")); $("#"+id).classList.add("active"); if(id==="tab-holdings") renderHoldings(); if(id==="tab-latest-dividends") renderLatestDividends(); if(id==="tab-monthly") renderMonthly(); if(id==="tab-by-symbol") renderBySymbol(); if(id==="tab-goal") renderGoals(); if(id==="tab-report") renderReport(); if(id==="tab-settings") applySettingsUI(); }; nav.appendChild(b); }); }
+
+$("#btn-save").onclick=()=>{ const symbol=$("#in-symbol").value.trim().toUpperCase(); const amount=parseFloat($("#in-amount").value); const qty=parseFloat($("#in-qty").value); const date=$("#in-date").value||todayISO(); if(!symbol||!(amount>0)||!(qty>0)){ alert("종목/매수금/매수량을 정확히 입력하세요."); return; } holdingsRaw.push({symbol,amount_usd:amount,qty,date}); store.set("pf_holdings_v12",holdingsRaw); $("#in-symbol").value=$("#in-amount").value=$("#in-qty").value=""; $("#in-date").value=""; alert("저장 완료! 보유종목현황 탭을 확인하세요."); };
+function sampleRows(){ return [{symbol:"AAPL",amount_usd:180,qty:5,date:"2024-01-15"},{symbol:"MSFT",amount_usd:300,qty:3,date:"2024-03-20"},{symbol:"VZ",amount_usd:33,qty:25,date:"2023-11-05"}]; }
+$("#btn-sample-csv").onclick=()=>{ const csv=Papa.unparse(sampleRows()); const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="sample_portfolio.csv"; a.click(); };
+$("#btn-sample-xlsx").onclick=()=>{ const ws=XLSX.utils.json_to_sheet(sampleRows()); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"portfolio"); XLSX.writeFile(wb,"sample_portfolio.xlsx"); };
+let uploadedWorkbook=null;
+$("#file-input").onchange=async (e)=>{ const file=e.target.files?.[0]; $("#sheet-select").innerHTML=`<option value="">- 자동 -</option>`; uploadedWorkbook=null; if(!file) return; if(file.name.endsWith(".csv")){ $("#sheet-select").innerHTML=`<option value="">CSV (단일)</option>`; } else if(file.name.endsWith(".xlsx")){ const data=await file.arrayBuffer(); const wb=XLSX.read(data,{type:"array"}); uploadedWorkbook=wb; wb.SheetNames.forEach(n=>{ const o=document.createElement("option"); o.value=n; o.textContent=n; $("#sheet-select").appendChild(o); }); } };
+$("#btn-register").onclick=async ()=>{ const file=$("#file-input").files?.[0]; if(!file){ alert("CSV 또는 XLSX 파일을 선택하세요."); return; } let rows=[]; if(file.name.endsWith(".csv")){ const text=await file.text(); rows=Papa.parse(text,{header:true,skipEmptyLines:true}).data; } else { const sel=$("#sheet-select").value || (uploadedWorkbook?.SheetNames?.[0] ?? ""); const ws=uploadedWorkbook.Sheets[sel]; rows=XLSX.utils.sheet_to_json(ws); } let added=0; for(const r of rows){ const symbol=String(r.symbol||"").trim().toUpperCase(); const amount=parseFloat(r.amount_usd); const qty=parseFloat(r.qty); const date=(r.date? String(r.date).slice(0,10) : todayISO()); if(symbol&&amount>0&&qty>0){ holdingsRaw.push({symbol,amount_usd:amount,qty,date}); added++; } } store.set("pf_holdings_v12",holdingsRaw); alert(`등록 완료: ${added}건`); };
+
+function groupBySymbol(entries){
+  const amtType = settings.amountType;
+  const map = {};
+  for(const r of entries){
+    const s = (r.symbol||"").toUpperCase(); if(!s) continue;
+    if(!map[s]) map[s] = { symbol:s, qty:0, cost:0, lots:[] };
+    const qty = Number(r.qty)||0;
+    const amt = Number(r.amount_usd)||0;
+    map[s].qty  += qty;
+    map[s].cost += (amtType==="total" ? amt : amt*qty);
+    map[s].lots.push({date:r.date, qty});
+  }
+  return Object.values(map).map(x => ({...x, avg: x.qty>0 ? x.cost/x.qty : NaN})).sort((a,b)=> a.symbol.localeCompare(b.symbol));
+}
+function lotsSharesUntil(lots,dateISO){ return lots.filter(l=>l.date<=dateISO).reduce((s,l)=>s+l.qty,0); }
+
+async function renderHoldings(sortKey="symbol",asc=true){
+  const fx=await getFX(); const tbody=$("#tbl-holdings tbody"); const groups=groupBySymbol(holdingsRaw);
+  for(const g of groups){ g.price=await getPrice(g.symbol); g.pnl=(g.price??0)*g.qty - g.cost; g.ret=g.cost>0? g.pnl/g.cost:0; }
+  const invested=groups.reduce((s,g)=>s+g.cost,0); const value=groups.reduce((s,g)=>s+(g.price||0)*g.qty,0); const plSum=value-invested; const retSum=invested>0? plSum/invested:0;
+  $("#holdings-summary").innerHTML=`평균매입가는 종목별 가중평균 단가입니다 · 총 투자 ${fmtBoth(invested,fx)} / 평가 ${fmtBoth(value,fx)} / 손익 ${plSum>=0?"▲":"▼"} ${fmtBoth(Math.abs(plSum),fx)} (${pct(retSum)})`;
+  groups.sort((a,b)=>{ const va=a[sortKey]??0, vb=b[sortKey]??0; if(typeof va==="string") return asc? va.localeCompare(vb):vb.localeCompare(va); return asc? va-vb:vb-va; });
+  tbody.innerHTML=""; for(const g of groups){ const tr=document.createElement("tr"); tr.innerHTML=`
+    <td>${g.symbol}</td>
+    <td class="right mono">${fmtBoth(g.avg,fx)}</td>
+    <td class="right mono">${g.price==null?'-':fmtBoth(g.price,fx)}</td>
+    <td class="right mono">${fmtQty0(g.qty)}</td>
+    <td class="right mono">${fmtBoth(g.cost,fx)}</td>
+    <td class="right mono ${g.pnl>=0?'':'muted'}">${fmtBoth(g.pnl,fx)}</td>
+    <td class="right mono ${g.ret>=0?'':'muted'}">${pct(g.ret)}</td>
+    <td><button class="danger" data-del="${g.symbol}">삭제</button></td>`; tbody.appendChild(tr); }
+  $("#tbl-holdings thead").onclick=(e)=>{ const key=e.target.getAttribute("data-sort"); if(!key) return; const curAsc=e.target.dataset.asc!=="false"; e.target.dataset.asc=(!curAsc).toString(); renderHoldings(key,!curAsc); };
+  $$("button[data-del]").forEach(b=> b.onclick=()=>{ const sym=b.getAttribute("data-del"); if(confirm(sym+" 종목을 전체 삭제할까요?")){ holdingsRaw=holdingsRaw.filter(r=>r.symbol!==sym); store.set("pf_holdings_v12",holdingsRaw); renderHoldings(sortKey,asc); } });
+}
+
+async function renderLatestDividends(sortKey="date",asc=false){
+  const fx=await getFX(); const groups=groupBySymbol(holdingsRaw); const symbols=groups.map(g=>g.symbol); const info=await getDividends(symbols);
+  const rows=[]; for(const g of groups){ const d=info[g.symbol]?.latest; if(!d) continue; const ps=d.amount; const total=ps*g.qty; rows.push({date:d.date,symbol:g.symbol,ps,total}); }
+  rows.sort((a,b)=>{ const va=a[sortKey], vb=b[sortKey]; if(sortKey==="symbol"||sortKey==="date") return asc? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va)); return asc? va-vb : vb-va; });
+  const tbody=$("#tbl-latest tbody"); tbody.innerHTML=""; rows.forEach(r=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${r.date}</td><td>${r.symbol}</td><td class="right mono">${fmtBoth(r.ps,fx)}</td><td class="right mono">${fmtBoth(r.total,fx)}</td>`; tbody.appendChild(tr); });
+  $("#tbl-latest thead").onclick=(e)=>{ const key=e.target.getAttribute("data-sort"); if(!key) return; const curAsc=e.target.dataset.asc==="true"; e.target.dataset.asc=(!curAsc).toString(); renderLatestDividends(key,!curAsc); };
+}
+
+function yearsFromHoldingsAndDivs(divMap){ const years=new Set(); const minDate=holdingsRaw.length? holdingsRaw.map(r=>r.date).sort()[0] : todayISO().slice(0,4)+"-01-01"; const minYear=parseInt(minDate.slice(0,4)); const nowYear=new Date().getFullYear(); for(let y=minYear;y<=nowYear;y++) years.add(y); Object.values(divMap).forEach(d=>{ (d.history||[]).forEach(x=>years.add(parseInt(x.date.slice(0,4))));}); return Array.from(years).sort((a,b)=>b-a); }
+
+async function renderMonthly(year=null){
+  const fx=await getFX(); const groups=groupBySymbol(holdingsRaw); const symbols=groups.map(g=>g.symbol); const info=await getDividends(symbols);
+  const years=yearsFromHoldingsAndDivs(info); const sel=$("#sel-year"); sel.innerHTML=""; years.forEach(y=>{ const opt=document.createElement("option"); opt.value=y; opt.textContent=y; sel.appendChild(opt); }); if(!year){ sel.value=years[0]; } else { sel.value=year; } const targetYear=parseInt(sel.value);
+  const monthly=Array.from({length:12},(_,i)=>({month:`${targetYear}-${String(i+1).padStart(2,"0")}`,amt:0}));
+  for(const g of groups){ const hist=info[g.symbol]?.history||[]; for(const ev of hist){ const y=parseInt(ev.date.slice(0,4)); if(y!==targetYear) continue; const shares=lotsSharesUntil(g.lots,ev.date); if(shares<=0) continue; const mIdx=parseInt(ev.date.slice(5,7))-1; monthly[mIdx].amt += ev.amount * shares; } }
+  const totalYear=monthly.reduce((s,m)=>s+m.amt,0); $("#monthly-summary").textContent=`해당 연도 총 배당금: ${fmtBoth(totalYear,fx)}`;
+  const tbody=$("#tbl-monthly tbody"); tbody.innerHTML=""; monthly.forEach(m=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${m.month}</td><td class="right mono">${fmtBoth(m.amt,fx)}</td>`; tbody.appendChild(tr); }); const trSum=document.createElement("tr"); trSum.innerHTML=`<td><b>합계</b></td><td class="right mono"><b>${fmtBoth(totalYear,fx)}</b></td>`; tbody.appendChild(trSum);
+  $("#tbl-monthly thead").onclick=(e)=>{ const key=e.target.getAttribute("data-sort"); if(!key) return; const curAsc=e.target.dataset.asc==="true"; e.target.dataset.asc=(!curAsc).toString(); const rows=monthly.slice().sort((a,b)=> curAsc? (a[key]>b[key]?-1:1):(a[key]>b[key]?1:-1)); const tb=$("#tbl-monthly tbody"); tb.innerHTML=""; rows.forEach(m=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${m.month}</td><td class="right mono">${fmtBoth(m.amt,fx)}</td>`; tb.appendChild(tr); }); const trS=document.createElement("tr"); trS.innerHTML=`<td><b>합계</b></td><td class="right mono"><b>${fmtBoth(totalYear,fx)}</b></td>`; tb.appendChild(trS); };
+  $("#btn-refresh-monthly").onclick=()=>renderMonthly(parseInt($("#sel-year").value)); $("#sel-year").onchange=()=>renderMonthly(parseInt($("#sel-year").value));
+}
+
+async function renderBySymbol(year=null){
+  const fx=await getFX(); const groups=groupBySymbol(holdingsRaw); const symbols=groups.map(g=>g.symbol); const info=await getDividends(symbols);
+  const years=yearsFromHoldingsAndDivs(info); const sel=$("#sel-year2"); sel.innerHTML=""; years.forEach(y=>{ const o=document.createElement("option"); o.value=y; o.textContent=y; sel.appendChild(o); }); if(!year){ sel.value=years[0]; }else{ sel.value=year; } const targetYear=parseInt(sel.value);
+  const rows=[]; for(const g of groups){ const hist=info[g.symbol]?.history||[]; for(const ev of hist){ const y=parseInt(ev.date.slice(0,4)); if(y!==targetYear) continue; const m=ev.date.slice(0,7); const shares=lotsSharesUntil(g.lots,ev.date); if(shares<=0) continue; rows.push({month:m,symbol:g.symbol,amt:ev.amount*shares}); } }
+  const mp={}; for(const r of rows){ const k=r.month+"|"+r.symbol; mp[k]=(mp[k]||0)+r.amt; }
+  const arr=Object.entries(mp).map(([k,v])=>{ const [month,symbol]=k.split("|"); return {month,symbol,amt:v}; }).sort((a,b)=> a.month===b.month? a.symbol.localeCompare(b.symbol) : a.month.localeCompare(b.month));
+  const totalYear=arr.reduce((s,r)=>s+r.amt,0); $("#by-symbol-summary").textContent=`해당 연도 총 배당금: ${fmtBoth(totalYear,fx)}`;
+  const tbody=$("#tbl-by-symbol tbody"); tbody.innerHTML=""; arr.forEach(r=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${r.month}</td><td>${r.symbol}</td><td class="right mono">${fmtBoth(r.amt,fx)}</td>`; tbody.appendChild(tr); }); const trS=document.createElement("tr"); trS.innerHTML=`<td><b>합계</b></td><td></td><td class="right mono"><b>${fmtBoth(totalYear,fx)}</b></td>`; tbody.appendChild(trS);
+  $("#tbl-by-symbol thead").onclick=(e)=>{ const key=e.target.getAttribute("data-sort"); if(!key) return; const curAsc=e.target.dataset.asc==="true"; e.target.dataset.asc=(!curAsc).toString(); const sorted=arr.slice().sort((a,b)=>{ const va=a[key], vb=b[key]; if(key==="month"||key==="symbol") return curAsc? vb.localeCompare(va) : va.localeCompare(vb); return curAsc? vb - va : va - vb;}); const tb=$("#tbl-by-symbol tbody"); tb.innerHTML=""; sorted.forEach(r=>{ const tr=document.createElement("tr"); tr.innerHTML=`<td>${r.month}</td><td>${r.symbol}</td><td class="right mono">${fmtBoth(r.amt,fx)}</td>`; tb.appendChild(tr); }); const trSum=document.createElement("tr"); trSum.innerHTML=`<td><b>합계</b></td><td></td><td class="right mono"><b>${fmtBoth(totalYear,fx)}</b></td>`; tb.appendChild(trSum); };
+  $("#btn-refresh-by-symbol").onclick=()=>renderBySymbol(parseInt($("#sel-year2").value)); $("#sel-year2").onchange=()=>renderBySymbol(parseInt($("#sel-year2").value));
+}
+
+$("#btn-goal-add").onclick=()=>{ const symbol=$("#goal-symbol").value.trim().toUpperCase(); const qty=parseFloat($("#goal-qty").value); if(!symbol||!(qty>0)){ alert("종목과 수량을 정확히 입력하세요."); return;} const ex=goals.find(g=>g.symbol===symbol); if(ex){ ex.qty += qty; } else { goals.push({symbol,qty}); } store.set("pf_goals_v12",goals); $("#goal-symbol").value=$("#goal-qty").value=""; renderGoals(); };
+async function renderGoals(){ const fx=await getFX(); const tbody=$("#tbl-goal tbody"); tbody.innerHTML=""; const basis=settings.goalDivBasis; for(const g of goals){ const price=await getPrice(g.symbol); const divs=await getDividends([g.symbol]); const hist=(divs[g.symbol]?.history||[]).slice().sort((a,b)=> a.date.localeCompare(b.date)); let perShare=0; if(basis==="latest"){ perShare = hist.length? hist[hist.length-1].amount : 0; } else { const ago=new Date(); ago.setFullYear(ago.getFullYear()-1); perShare = hist.filter(ev=> new Date(ev.date)>=ago).reduce((s,ev)=>s+ev.amount,0); } const total=perShare * g.qty; const tr=document.createElement("tr"); tr.innerHTML=`<td>${g.symbol}</td><td class="right mono">${price==null?'-':fmtBoth(price,fx)}</td><td class="right mono"><input class="edit-input" type="number" step="0.0001" value="${g.qty}" data-edit="${g.symbol}"/></td><td class="right mono">${fmtBoth(perShare,fx)}</td><td class="right mono">${fmtBoth(total,fx)}</td><td><button class="danger" data-delgoal="${g.symbol}">삭제</button></td>`; tbody.appendChild(tr); }
+  $$("input[data-edit]").forEach(inp=> inp.onchange=()=>{ const sym=inp.getAttribute("data-edit"); const v=parseFloat(inp.value); const g=goals.find(x=>x.symbol===sym); if(g){ g.qty=v; store.set("pf_goals_v12",goals); renderGoals(); } }); $$("button[data-delgoal]").forEach(btn=> btn.onclick=()=>{ const sym=btn.getAttribute("data-delgoal"); goals=goals.filter(x=>x.symbol!==sym); store.set("pf_goals_v12",goals); renderGoals(); }); }
+
+async function renderReport(){
+  const fx=await getFX(); const groups=groupBySymbol(holdingsRaw);
+  for(const g of groups){ g.price=await getPrice(g.symbol); g.pnl=(g.price??0)*g.qty - g.cost; g.ret=g.cost>0? g.pnl/g.cost:0; }
+  const info=await getDividends(groups.map(g=>g.symbol));
+  const divTTM={}; let incomeTTM=0;
+  for(const g of groups){ const hist=info[g.symbol]?.history||[]; const ago=new Date(); ago.setFullYear(ago.getFullYear()-1); const ttm=hist.filter(ev=> new Date(ev.date)>=ago).reduce((s,ev)=>s+ev.amount,0); divTTM[g.symbol]=ttm; incomeTTM += ttm * g.qty; }
+  const invested=groups.reduce((s,g)=>s+g.cost,0); const curVal=groups.reduce((s,g)=>s+(g.price||0)*g.qty,0); const pl=curVal-invested; const ret=invested>0? pl/invested:0;
+  const monthlyIncomeUSD=incomeTTM/12, monthlyIncomeKRW=monthlyIncomeUSD*fx, targetKRW=1000000, gapKRW=targetKRW-monthlyIncomeKRW;
+  const weights=groups.map(g=>({symbol:g.symbol,w:(g.cost/invested)||0,ret:g.ret,pl:g.pnl,price:g.price,avg:g.avg,qty:g.qty,divYld:(g.price?(divTTM[g.symbol]/g.price):0)})).sort((a,b)=>b.w-a.w);
+  const topW=groups.slice().sort((a,b)=>b.pnl-a.pnl).slice(0,3).map(g=>`${g.symbol} ${pct(g.ret)}`);
+  const topL=groups.slice().sort((a,b)=>a.pnl-b.pnl).slice(0,3).map(g=>`${g.symbol} ${pct(g.ret)}`);
+
+  const lines=[];
+  lines.push(`● 포트폴리오 요약: 총 투자 ${fmtBoth(invested,fx)} → 평가 ${fmtBoth(curVal,fx)}, 손익 ${pl>=0?"▲":"▼"} ${fmtBoth(Math.abs(pl),fx)} (${pct(ret)}).`);
+  lines.push(`● 배당 인컴(최근 12개월): 연 ${fmtBoth(incomeTTM,fx)}, 월평균 ${fmtBoth(monthlyIncomeUSD,fx)}. 목표(월 1,000,000원) 대비: ₩${fmtKRW(gapKRW)} ${gapKRW>0?"부족":"초과"}.`);
+  lines.push(`● 손익 상위: ${topW.join(", ")}  |  손익 하위: ${topL.join(", ")}.`);
+  lines.push(`\n[보유 비중 & 지표]`); weights.forEach(x=> lines.push(`- ${x.symbol}: 비중 ${(x.w*100).toFixed(1)}% | 평균매입 ${fmtBoth(x.avg,fx)} → 현재 ${fmtBoth(x.price,fx)} (${pct((x.price-x.avg)/x.avg)}), 수익률 ${pct(x.ret)} | TTM 배당수익률 ${(x.divYld*100).toFixed(2)}%`));
+  lines.push(`\n[운용 코멘트] (규칙 기반)`); groups.forEach(g=>{ const yld=g.price? (divTTM[g.symbol]/g.price):0; let idea="중립 유지"; if(g.ret<-0.15) idea="분할매수/평단개선 검토"; else if(g.ret>0.25) idea="이익 보호(부분 익절·트레일링 스탑)"; lines.push(`- ${g.symbol}: ${idea}. 월 인컴 기여 ${fmtBoth((divTTM[g.symbol]*g.qty)/12,fx)}.`); });
+  $("#report-content").innerHTML="<pre style='white-space:pre-wrap;line-height:1.6'>"+lines.join("\n")+"</pre>";
+  $("#btn-refresh-report").onclick=renderReport;
+}
+
+(async function init(){
+  applySettingsUI();
+  initTabs();
+  await getFX();
+  renderHoldings();
+})();
+</script>
+</body>
+</html>
